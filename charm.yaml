@@ -30,8 +30,8 @@ persona:
   license: "MIT"
   
   assets:
-    icon: "https://raw.githubusercontent.com/xzz754233/event-deep-research/master/media/icon.jpeg"  
-    banner: "https://raw.githubusercontent.com/xzz754233/event-deep-research/master/media/banner.jpeg" 
+    icon: "https://raw.githubusercontent.com/xzz754233/event-deep-research/master/media/icon.png"  
+    banner: "https://raw.githubusercontent.com/xzz754233/event-deep-research/master/media/banner.png" 
     screenshots: []
 
 pricing:
