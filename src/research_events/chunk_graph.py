@@ -7,16 +7,18 @@ from src.configuration import Configuration
 from src.llm_service import create_llm_chunk_model
 
 
-class BiographicEventCheck(BaseModel):
-    contains_biographic_event: bool = Field(
-        description="Whether the text chunk contains biographical events"
+# CHANGED: Renamed from BiographicEventCheck to match our new domain
+class DramaEventCheck(BaseModel):
+    contains_drama_event: bool = Field(
+        description="Whether the text chunk contains relevant drama, scandal, or conflict information"
     )
 
 
 class ChunkResult(BaseModel):
     content: str
-    contains_biographic_event: bool = Field(
-        description="Whether the text chunk contains biographical events"
+    # CHANGED: Updated field name
+    contains_drama_event: bool = Field(
+        description="Whether the text chunk contains relevant drama, scandal, or conflict information"
     )
 
 
@@ -35,45 +37,47 @@ def split_text(state: ChunkState) -> ChunkState:
 
 
 def check_chunk_for_events(state: ChunkState, config) -> ChunkState:
-    """Check each chunk for biographical events using structured output."""
-    model = create_llm_chunk_model(config, BiographicEventCheck)
+    """Check each chunk for drama/scandal events using structured output."""
+    # CHANGED: Using the new Pydantic model
+    model = create_llm_chunk_model(config, DramaEventCheck)
     results = {}
 
     for i, chunk in enumerate(state["chunks"]):
+        # CHANGED: Completely rewrote the prompt to detect "Tea" instead of "History"
         prompt = f"""
-        Analyze this text chunk and determine if it contains SPECIFIC biographical events.
+        Analyze this text chunk and determine if it contains SPECIFIC details regarding a scandal, controversy, or internet drama.
         
         ONLY mark as true if the chunk contains:
-        - Birth/death dates or locations
-        - Marriage ceremonies or relationships
-        - Educational enrollment or graduation
-        - Career appointments or job changes
-        - Awards, prizes, or honors received
-        - Relocations to new cities/countries
-        - Major discoveries or inventions
+        - Specific accusations, allegations, or "call outs"
+        - Details of a conflict (arguments, fights, breakups, beefs)
+        - "Receipts" (descriptions of screenshots, leaked messages, photos, recordings)
+        - Official statements, apologies, or press releases (e.g., "Notes App apology")
+        - Significant social media actions (unfollowing, blocking, deleting posts, viral threads)
+        - Legal actions (lawsuits, restraining orders, police reports)
+        - Concrete dates/locations/platforms associated with the incident
         
         DO NOT mark as true for:
-        - General descriptions or background information
-        - Character traits or personality descriptions
-        - General statements about time periods
-        - Descriptions of places without personal connection
-        - General knowledge or context
+        - Website navigation menus, footers, or headers
+        - Generic advertisements or spam
+        - General biographical facts unrelated to the controversy (e.g., where they went to high school, unless relevant to the scandal)
+        - General descriptions of their career that are not part of the drama
         
-        The event must be specific and concrete, not general background.
+        The info must be specific "tea" or context for the drama, not just filler text.
         
         Text chunk: "{chunk}"
         """
 
         result = model.invoke(prompt)
         results[f"chunk_{i}"] = ChunkResult(
-            content=chunk, contains_biographic_event=result.contains_biographic_event
+            content=chunk, contains_drama_event=result.contains_drama_event
         )
 
     return {"results": results}
 
 
-def create_biographic_event_graph() -> CompiledStateGraph:
-    """Create and return the biographic event detection graph."""
+# CHANGED: Renamed function to reflect purpose (Note: We must update the import in merge_events_graph.py)
+def create_drama_event_graph() -> CompiledStateGraph:
+    """Create and return the drama/scandal event detection graph."""
     graph = StateGraph(ChunkState, config_schema=Configuration)
 
     graph.add_node("split_text", split_text)
@@ -86,4 +90,5 @@ def create_biographic_event_graph() -> CompiledStateGraph:
     return graph.compile()
 
 
-graph = create_biographic_event_graph()
+# Export the graph
+graph = create_drama_event_graph()

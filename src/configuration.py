@@ -6,7 +6,7 @@ from pydantic import BaseModel, Field
 
 
 class Configuration(BaseModel):
-    """Main configuration class for the Deep Research agent."""
+    """Main configuration class for the Drama/Gossip Research agent."""
 
     # Single model for most providers (simplified configuration)
     llm_model: str = Field(
@@ -17,18 +17,15 @@ class Configuration(BaseModel):
     # Optional overrides
     structured_llm_model: str | None = Field(
         default=None,
-        # default="ollama:mistral-nemo:latest",
         description="Override model for structured output",
     )
     tools_llm_model: str | None = Field(
         default=None,
-        # default="ollama:gpt-oss:20b",
         description="Override model for tools",
     )
     chunk_llm_model: str | None = Field(
         default=None,
-        # default="ollama:gemma3:4b",
-        description="Small model for chunk biographical event detection",
+        description="Small model for chunk event detection",
     )
 
     structured_llm_max_tokens: int = Field(
@@ -58,9 +55,11 @@ class Configuration(BaseModel):
     max_tool_iterations: int = Field(
         default=5, description="Maximum number of tool iterations"
     )
+
+    # CHARM OPTIMIZATION: Reduced from 20 to 10 to prevent 600s timeout
     max_chunks: int = Field(
-        default=20,
-        description="Maximum number of chunks to process for biographical event detection",
+        default=10,
+        description="Maximum number of chunks to process for event detection",
     )
 
     def get_llm_structured_model(self) -> str:
@@ -83,7 +82,9 @@ class Configuration(BaseModel):
         """Get the LLM chunk model, using overrides if provided."""
         if self.chunk_llm_model:
             return self.chunk_llm_model
-        return "ollama:gemma3:4b"
+
+        # FIXED: Changed from 'ollama:gemma3:4b' to a cloud model for Charm compliance
+        return "google_genai:gemini-2.5-flash"
 
     @classmethod
     def from_runnable_config(

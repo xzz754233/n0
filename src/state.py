@@ -1,4 +1,4 @@
-"""Defines the Pydantic models and TypedDicts for the research agent graph.
+"""Defines the Pydantic models and TypedDicts for the Drama/Gossip Research agent.
 This file serves as the schema for data structures, agent tools, and state management.
 """
 
@@ -19,18 +19,24 @@ class ChronologyDate(BaseModel):
 
     year: int | None = Field(None, description="The year of the event.")
     note: str | None = Field(
-        None, description="Adds extra information to the date (month, day, range...)."
+        None,
+        description="Adds extra information to the date (month, day, specific time, e.g., 'May 5th, 3:00 PM').",
     )
 
 
 class ChronologyEventInput(BaseModel):
     """Represents a single event, typically used for initial data extraction before an ID is assigned."""
 
-    name: str = Field(description="A short, title-like name for the event.")
-    description: str = Field(description="A concise description of the event.")
+    name: str = Field(
+        description="A short, catchy title for the event (e.g., 'The Apology Video')."
+    )
+    description: str = Field(
+        description="A concise description of what happened, who said what, or the evidence found."
+    )
     date: ChronologyDate = Field(..., description="The structured date of the event.")
     location: str | None = Field(
-        None, description="The geographical location where the event occurred."
+        None,
+        description="The platform (Twitter/X, Instagram, YouTube) or physical location where it happened.",
     )
 
 
@@ -38,7 +44,7 @@ class ChronologyEvent(ChronologyEventInput):
     """The final, canonical event model with a unique identifier."""
 
     id: str = Field(
-        description="The id of the event in lowercase and underscores. Ex: 'word1_word2'"
+        description="The id of the event in lowercase and underscores. Ex: 'drama_incident_1'"
     )
 
 
@@ -55,21 +61,25 @@ class Chronology(BaseModel):
 
 
 class CategoriesWithEvents(BaseModel):
-    early: str = Field(
+    # CHANGED: Renamed from 'early' to 'context'
+    context: str = Field(
         default="",
-        description="Covers childhood, upbringing, family, education, and early influences that shaped the author.",
+        description="Background info, previous relationships, or the 'calm before the storm'. origin of the beef.",
     )
-    personal: str = Field(
+    # CHANGED: Renamed from 'personal' to 'conflict'
+    conflict: str = Field(
         default="",
-        description="Focuses on relationships, friendships, family life, places of residence, and notable personal traits or beliefs.",
+        description="The main incident, the accusation, the leak, the breakup, or the scandal itself.",
     )
-    career: str = Field(
+    # CHANGED: Renamed from 'career' to 'reaction'
+    reaction: str = Field(
         default="",
-        description="Details their professional journey: first steps into writing, major publications, collaborations, recurring themes, style, and significant milestones.",
+        description="Public responses, PR statements, tweets from other influencers, lawsuits, or 'receipts' posted.",
     )
-    legacy: str = Field(
+    # CHANGED: Renamed from 'legacy' to 'outcome'
+    outcome: str = Field(
         default="",
-        description="Explains how their work was received, awards or recognition, cultural/literary impact, influence on other authors, and how they are remembered today.",
+        description="Current status, who was cancelled, impact on career, or final resolution (if any).",
     )
 
 
@@ -80,7 +90,7 @@ class CategoriesWithEvents(BaseModel):
 
 
 class ResearchEventsTool(BaseModel):
-    """The query to be used to research events about an historical figure. The query is based on the reflection of the assistant."""
+    """The query to be used to research the drama/scandal. The query is based on the reflection of the assistant."""
 
     research_question: str
     pass  # No arguments needed
@@ -88,9 +98,8 @@ class ResearchEventsTool(BaseModel):
 
 class FinishResearchTool(BaseModel):
     """Concludes the research process.
-    Call this tool ONLY when you have a comprehensive timeline of the person's life,
-    including key events like birth, death, major achievements, and significant personal
-    milestones, and you are confident that no major gaps remain.
+    Call this tool ONLY when you have a full picture of the drama, covering the context,
+    the main conflict, key reactions, and the current outcome.
     """
 
     pass
@@ -115,10 +124,11 @@ def override_reducer(current_value, new_value):
 class SupervisorStateInput(TypedDict):
     """The initial input to start the main research graph."""
 
-    person_to_research: str
+    person_to_research: str  # Can be a person name or a topic (e.g. "FTX Collapse")
     existing_events: CategoriesWithEvents = Field(
-        default=CategoriesWithEvents(early="", personal="", career="", legacy=""),
-        description="Covers chronology events of the person to research.",
+        # CHANGED: Updated default to use new category names
+        default=CategoriesWithEvents(context="", conflict="", reaction="", outcome=""),
+        description="Covers chronology events of the topic.",
     )
     used_domains: list[str] = Field(
         default=[],

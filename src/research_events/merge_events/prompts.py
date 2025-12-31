@@ -6,10 +6,10 @@ You are a helpful assistant that will categorize the events into the 4 categorie
 </Events>
 
 <Categories>
-early: Covers childhood, upbringing, family, education, and early influences that shaped the author.
-personal: Focuses on relationships, friendships, family life, places of residence, and notable personal traits or beliefs.
-career: Details their professional journey: first steps into writing, major publications, collaborations, recurring themes, style, and significant milestones.
-legacy: Explains how their work was received, awards or recognition, cultural/literary impact, influence on other authors, and they are remembered today.
+context: Background info, previous relationships, or the 'calm before the storm'. origin of the beef.
+conflict: The main incident, the accusation, the leak, the breakup, or the scandal itself.
+reaction: Public responses, PR statements, tweets from other influencers, lawsuits, or 'receipts' posted.
+outcome: Current status, who was cancelled, impact on career, or final resolution (if any).
 </Categories>
 
 
@@ -19,28 +19,27 @@ INCLUDE ALL THE INFORMATION FROM THE EVENTS, do not abbreviate or omit any infor
 """
 
 EXTRACT_AND_CATEGORIZE_PROMPT = """
-You are a Biographical Event Extractor and Categorizer. Your task is to analyze text chunks for events related to the life of the historical figure**
+You are a Drama/Scandal Event Extractor and Categorizer. Your task is to analyze text chunks for events related to the topic/person.**
 
 <Available Tools>
-- `IrrelevantChunk` (use if the text contains NO biographical events relevant to the research question)
+- `IrrelevantChunk` (use if the text contains NO drama/scandal events relevant to the research question)
 - `RelevantEventsCategorized` (use if the text contains relevant events - categorize them into the 4 categories)
 </Available Tools>
 
 <Categories>
-early: Covers childhood, upbringing, family, education, and early influences that shaped the author.
-personal: Focuses on relationships, friendships, family life, places of residence, and notable personal traits or beliefs.
-career: Details their professional journey: first steps into writing, major publications, collaborations, recurring themes, style, and significant milestones.
-legacy: Explains how their work was received, awards or recognition, cultural/literary impact, influence on other authors, and how they are remembered today.
+context: Background info, previous relationships, or the 'calm before the storm'. origin of the beef.
+conflict: The main incident, the accusation, the leak, the breakup, or the scandal itself.
+reaction: Public responses, PR statements, tweets from other influencers, lawsuits, or 'receipts' posted.
+outcome: Current status, who was cancelled, impact on career, or final resolution (if any).
 </Categories>
 
 **EXTRACTION RULES**:
-- Extract COMPLETE sentences with ALL available details (dates, names, locations, context, emotions, motivations)
-- Include surrounding context that makes the event meaningful and complete
-- Preserve the original narrative flow and descriptive language
-- Capture cause-and-effect relationships and consequences
+- Extract COMPLETE sentences with ALL available details (dates, names, platforms, context, emotions)
+- Include "receipts" (screenshots, quotes, specific evidence)
+- Preserve the tone of the drama (e.g., if it was a heated argument, describe it as such)
 - Include only events directly relevant to the research question
 - Maintain chronological order within each category
-- Format as clean bullet points with complete, detailed descriptions (e.g., "- In the spring of 1965, while living in a small apartment in Paris, she attended a poetry reading that fundamentally changed her approach to writing, inspiring her to experiment with free verse.")
+- Format as clean bullet points with complete, detailed descriptions
 - IMPORTANT: Return each category as a SINGLE string containing all bullet points, not as a list
 
 <Text to Analyze>

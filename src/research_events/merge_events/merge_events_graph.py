@@ -7,7 +7,9 @@ from langgraph.pregel.main import asyncio
 from pydantic import BaseModel, Field
 from src.configuration import Configuration
 from src.llm_service import create_llm_with_tools
-from src.research_events.chunk_graph import create_biographic_event_graph
+
+# CHANGED: Import the new graph factory function
+from src.research_events.chunk_graph import create_drama_event_graph
 from src.research_events.merge_events.prompts import (
     EXTRACT_AND_CATEGORIZE_PROMPT,
     MERGE_EVENTS_TEMPLATE,
@@ -19,25 +21,26 @@ from src.url_crawler.utils import chunk_text_by_tokens
 from src.utils import get_langfuse_handler
 
 
+# CHANGED: Updated fields to match the Drama/Gossip domain
 class RelevantEventsCategorized(BaseModel):
-    """The chunk contains relevant biographical events that have been categorized."""
+    """The chunk contains relevant drama/scandal events that have been categorized."""
 
-    early: str = Field(
-        description="Bullet points of events related to childhood, upbringing, family, education, and early influences"
+    context: str = Field(
+        description="Bullet points about background info, previous relationships, or the origin of the beef."
     )
-    personal: str = Field(
-        description="Bullet points of events related to relationships, friendships, family life, residence, and personal traits"
+    conflict: str = Field(
+        description="Bullet points about the main incident, accusations, leaks, or the scandal itself."
     )
-    career: str = Field(
-        description="Bullet points of events related to professional journey, publications, collaborations, and milestones"
+    reaction: str = Field(
+        description="Bullet points about public responses, PR statements, tweets, lawsuits, or 'receipts'."
     )
-    legacy: str = Field(
-        description="Bullet points of events related to recognition, impact, influence, and how they are remembered"
+    outcome: str = Field(
+        description="Bullet points about current status, cancellations, career impact, or final resolution."
     )
 
 
 class IrrelevantChunk(BaseModel):
-    """The chunk contains NO biographical events relevant to the research question."""
+    """The chunk contains NO drama/scandal events relevant to the research question."""
 
 
 class InputMergeEventsState(TypedDict):
@@ -61,7 +64,7 @@ class OutputMergeEventsState(TypedDict):
 async def split_events(
     state: MergeEventsState,
 ) -> Command[Literal["filter_chunks", "__end__"]]:
-    """Use token-based chunking from URL crawler and filter for biographical events"""
+    """Use token-based chunking from URL crawler and filter for drama events"""
     extracted_events = state.get("extracted_events", "")
 
     if not extracted_events.strip():
@@ -82,7 +85,7 @@ async def split_events(
 async def filter_chunks(
     state: MergeEventsState, config: RunnableConfig
 ) -> Command[Literal["extract_and_categorize_chunk", "__end__"]]:
-    """Filter chunks to only process those containing biographical events"""
+    """Filter chunks to only process those containing relevant drama events"""
     chunks = state.get("text_chunks", [])
 
     if not chunks:
@@ -90,25 +93,25 @@ async def filter_chunks(
             goto="__end__",
         )
 
-    # Use chunk graph to filter for biographical events
-    chunk_graph = create_biographic_event_graph()
+    # CHANGED: Use the drama event graph
+    chunk_graph = create_drama_event_graph()
 
     configurable = Configuration.from_runnable_config(config)
     if len(chunks) > configurable.max_chunks:
         # To avoid recursion issues, set max chunks
         chunks = chunks[: configurable.max_chunks]
 
-    # Process each chunk through the biographic event detection graph
+    # Process each chunk through the drama event detection graph
     relevant_chunks = []
     for chunk in chunks:
         chunk_result = await chunk_graph.ainvoke({"text": chunk}, config)
 
-        # Check if any chunk contains biographical events
+        # Check if any chunk contains drama events
+        # CHANGED: Check for 'contains_drama_event' instead of 'contains_biographic_event'
         has_events = any(
-            result.contains_biographic_event
-            for result in chunk_result["results"].values()
+            result.contains_drama_event for result in chunk_result["results"].values()
         )
-        print(f"contains_biographic_event: {has_events}")
+        print(f"contains_drama_event: {has_events}")
 
         if has_events:
             relevant_chunks.append(chunk)
@@ -160,7 +163,10 @@ async def extract_and_categorize_chunk(
         }
         categorized = CategoriesWithEvents(**categorized_data)
     else:
-        categorized = CategoriesWithEvents(early="", personal="", career="", legacy="")
+        # CHANGED: Initialize with new empty fields
+        categorized = CategoriesWithEvents(
+            context="", conflict="", reaction="", outcome=""
+        )
 
     return Command(
         goto="extract_and_categorize_chunk",  # loop until all chunks processed
@@ -188,13 +194,14 @@ async def combine_new_and_original_events(
     """Merge original and new events for each category using an LLM."""
     print("Combining new and original events...")
 
+    # CHANGED: Updated default empty values
     existing_events_raw = state.get(
         "existing_events",
-        CategoriesWithEvents(early="", personal="", career="", legacy=""),
+        CategoriesWithEvents(context="", conflict="", reaction="", outcome=""),
     )
     new_events_raw = state.get(
         "extracted_events_categorized",
-        CategoriesWithEvents(early="", personal="", career="", legacy=""),
+        CategoriesWithEvents(context="", conflict="", reaction="", outcome=""),
     )
 
     # Convert to proper Pydantic models if they're dicts
