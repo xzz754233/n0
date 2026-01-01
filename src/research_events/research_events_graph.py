@@ -32,7 +32,10 @@ class OutputResearchEventsState(TypedDict):
 
 
 class BestUrls(BaseModel):
-    selected_urls: list[str] = Field(description="A list of the two best URLs.")
+    # SPEED HACK: Only ask for 1 URL
+    selected_urls: list[str] = Field(
+        description="A list containing ONLY the single best URL."
+    )
 
 
 def url_finder(
@@ -46,6 +49,7 @@ def url_finder(
     if not research_question:
         raise ValueError("research_question is required")
 
+    # SPEED HACK: Reduce search results
     tool = TavilySearch(
         max_results=3,
         topic="general",
@@ -55,13 +59,12 @@ def url_finder(
     )
 
     result = tool.invoke({"query": research_question})
-
     urls = [result["url"] for result in result["results"]]
 
+    # SPEED HACK: Prompt for single best URL
     prompt = """
-        From the results below, select the two URLs that will provide the most bibliographical events 
-        (key life events, publications, historical records, detailed timelines) about 
-        the subject's life in relation to the research question.
+        From the results below, select the ONE SINGLE best URL that provides a comprehensive timeline 
+        of the drama/scandal. Prefer Wikipedia, BBC, or major news recaps.
 
         <Results>
         {results}
@@ -70,31 +73,11 @@ def url_finder(
         <Research Question>
         {research_question}
         </Research Question>
-
     """
 
     prompt = prompt.format(results=urls, research_question=research_question)
-
     structured_llm = create_llm_structured_model(config=config, class_name=BestUrls)
-
     structured_result = structured_llm.invoke(prompt)
-
-    # return Command(
-    #     goto=END,
-    #     update={
-    #         "existing_events": CategoriesWithEvents(
-    #             early="test", personal="test", career="test", legacy="test"
-    #         ),
-    #         "used_domains": ["en.wikipedia.org", "www.britannica.com"],
-    #     },
-    # )
-
-    ### call to tavily/duck duck go
-    # urls = model.invoke(research_question)
-    # urls = [
-    #     "https://en.wikipedia.org/wiki/Henry_Miller",
-    #     "https://www.britannica.com/biography/Henry-Miller",
-    # ]
 
     return Command(
         goto="should_process_url_router",

@@ -1,6 +1,5 @@
 import os
 from typing import Any
-
 from langchain_core.runnables import RunnableConfig
 from pydantic import BaseModel, Field
 
@@ -8,93 +7,45 @@ from pydantic import BaseModel, Field
 class Configuration(BaseModel):
     """Main configuration class for the Drama/Gossip Research agent."""
 
-    # Single model for most providers (simplified configuration)
+    # FIXED: Use stable model version.
     llm_model: str = Field(
         default="google_genai:gemini-2.5-flash",
-        description="Primary LLM model to use for both structured output and tools",
+        description="Primary LLM model",
     )
 
-    # Optional overrides
-    structured_llm_model: str | None = Field(
-        default=None,
-        description="Override model for structured output",
-    )
-    tools_llm_model: str | None = Field(
-        default=None,
-        description="Override model for tools",
-    )
-    chunk_llm_model: str | None = Field(
-        default=None,
-        description="Small model for chunk event detection",
-    )
+    structured_llm_model: str | None = Field(default=None)
+    tools_llm_model: str | None = Field(default=None)
+    chunk_llm_model: str | None = Field(default=None)
 
-    structured_llm_max_tokens: int = Field(
-        default=4096, description="Maximum tokens for structured output model"
-    )
-    tools_llm_max_tokens: int = Field(
-        default=4096, description="Maximum tokens for tools model"
-    )
+    structured_llm_max_tokens: int = Field(default=4096)
+    tools_llm_max_tokens: int = Field(default=4096)
+    max_structured_output_retries: int = Field(default=3)
+    max_tools_output_retries: int = Field(default=3)
 
-    max_structured_output_retries: int = Field(
-        default=3, description="Maximum retry attempts for structured output"
-    )
-    max_tools_output_retries: int = Field(
-        default=3, description="Maximum retry attempts for tool calls"
-    )
+    default_chunk_size: int = Field(default=800)
+    default_overlap_size: int = Field(default=20)
+    max_content_length: int = Field(default=100000)
 
-    # Hardcoded values from graph files
-    default_chunk_size: int = Field(
-        default=800, description="Default chunk size for text processing"
-    )
-    default_overlap_size: int = Field(
-        default=20, description="Default overlap size between chunks"
-    )
-    max_content_length: int = Field(
-        default=100000, description="Maximum content length to process"
-    )
-    max_tool_iterations: int = Field(
-        default=2, description="Maximum number of tool iterations"
-    )
-
-    # CHARM OPTIMIZATION: Reduced from 20 to 10 to prevent 600s timeout
-    max_chunks: int = Field(
-        default=3,
-        description="Maximum number of chunks to process for event detection",
-    )
+    # CHARM TUNING: Give it enough turns to think/retry, but limit data load
+    max_tool_iterations: int = Field(default=10)
+    max_chunks: int = Field(default=3)
 
     def get_llm_structured_model(self) -> str:
-        """Get the LLM structured model, using overrides if provided."""
-        print(f"Getting LLM structured model: {self.structured_llm_model}")
-        if self.structured_llm_model:
-            return self.structured_llm_model
-
-        return self.llm_model
+        return self.structured_llm_model or self.llm_model
 
     def get_llm_with_tools_model(self) -> str:
-        """Get the LLM with tools model, using overrides if provided."""
-        print(f"Getting LLM with tools model: {self.tools_llm_model}")
-        if self.tools_llm_model:
-            return self.tools_llm_model
-
-        return self.llm_model
+        return self.tools_llm_model or self.llm_model
 
     def get_llm_chunk_model(self) -> str:
-        """Get the LLM chunk model, using overrides if provided."""
-        if self.chunk_llm_model:
-            return self.chunk_llm_model
-
-        # FIXED: Changed from 'ollama:gemma3:4b' to a cloud model for Charm compliance
         return "google_genai:gemini-2.5-flash"
 
     @classmethod
     def from_runnable_config(
         cls, config: RunnableConfig | None = None
     ) -> "Configuration":
-        """Create a Configuration instance from a RunnableConfig."""
         configurable = config.get("configurable", {}) if config else {}
-        field_names = list(cls.model_fields.keys())
-        values: dict[str, Any] = {
-            field_name: os.environ.get(field_name.upper(), configurable.get(field_name))
-            for field_name in field_names
+        values = {
+            k: os.environ.get(k.upper(), configurable.get(k))
+            for k in cls.model_fields.keys()
         }
         return cls(**{k: v for k, v in values.items() if v is not None})
