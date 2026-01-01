@@ -58,7 +58,7 @@ class Configuration(BaseModel):
 
     # CHARM OPTIMIZATION: Reduced from 20 to 10 to prevent 600s timeout
     max_chunks: int = Field(
-        default=10,
+        default=5,
         description="Maximum number of chunks to process for event detection",
     )
 

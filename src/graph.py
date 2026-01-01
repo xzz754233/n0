@@ -33,13 +33,6 @@ config = Configuration()
 MAX_TOOL_CALL_ITERATIONS = config.max_tool_iterations
 
 
-# Verify connection
-# if langfuse.auth_check():
-#     print("Langfuse client is authenticated and ready!")
-# else:
-#     print("Authentication failed. Please check your credentials and host.")
-
-
 async def supervisor_node(
     state: SupervisorState,
     config: RunnableConfig,
@@ -86,9 +79,11 @@ async def supervisor_tools_node(
     config: RunnableConfig,
 ) -> Command[Literal["supervisor", "structure_events"]]:
     """The 'hands' of the agent. Executes tools and returns a Command for routing."""
+
+    # CHANGED: Updated default empty state
     existing_events = state.get(
         "existing_events",
-        CategoriesWithEvents(early="", personal="", career="", legacy=""),
+        CategoriesWithEvents(context="", conflict="", reaction="", outcome=""),
     )
     events_summary = state.get("events_summary", "")
     used_domains = state.get("used_domains", [])
@@ -178,38 +173,44 @@ async def structure_events(
     print("--- Step 2: Structuring Events into JSON ---")
 
     # Get the cleaned events from the previous step
-    existing_events = state.get("existing_events", "")
+    # Note: State usually returns the Pydantic object directly here
+    existing_events = state.get("existing_events")
 
     if not existing_events:
-        print("Warning: No cleaned events text found in state")
-        return {"chronology": []}
+        print("Warning: No cleaned events found in state")
+        return {"structured_events": []}  # Return empty list if nothing found
 
     structured_llm = create_llm_structured_model(config=config, class_name=Chronology)
 
-    early_prompt = structure_events_prompt.format(
-        existing_events=existing_events["early"]
+    # FIXED: Access Pydantic fields using dot notation (.) instead of brackets ['']
+    # FIXED: Updated field names to match the new Drama domain (context, conflict, reaction, outcome)
+
+    context_prompt = structure_events_prompt.format(
+        existing_events=existing_events.context
     )
-    career_prompt = structure_events_prompt.format(
-        existing_events=existing_events["career"]
+    conflict_prompt = structure_events_prompt.format(
+        existing_events=existing_events.conflict
     )
-    personal_prompt = structure_events_prompt.format(
-        existing_events=existing_events["personal"]
+    reaction_prompt = structure_events_prompt.format(
+        existing_events=existing_events.reaction
     )
-    legacy_prompt = structure_events_prompt.format(
-        existing_events=existing_events["legacy"]
+    outcome_prompt = structure_events_prompt.format(
+        existing_events=existing_events.outcome
     )
 
-    early_response = await structured_llm.ainvoke(early_prompt)
-    career_response = await structured_llm.ainvoke(career_prompt)
-    personal_response = await structured_llm.ainvoke(personal_prompt)
-    legacy_response = await structured_llm.ainvoke(legacy_prompt)
-    # Invoke the second model to get the final structured output
+    # Invoke the model for each category
+    # Note: Depending on concurrency needs, these could be gathered, but sequential is safer for now
+    context_response = await structured_llm.ainvoke(context_prompt)
+    conflict_response = await structured_llm.ainvoke(conflict_prompt)
+    reaction_response = await structured_llm.ainvoke(reaction_prompt)
+    outcome_response = await structured_llm.ainvoke(outcome_prompt)
 
+    # Combine all events
     all_events = (
-        early_response.events
-        + career_response.events
-        + personal_response.events
-        + legacy_response.events
+        context_response.events
+        + conflict_response.events
+        + reaction_response.events
+        + outcome_response.events
     )
 
     return {

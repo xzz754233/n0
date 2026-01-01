@@ -8,7 +8,7 @@ from src.configuration import Configuration
 from src.utils import get_api_key_for_model
 
 configurable_model = init_chat_model(
-    configurable_fields=("model", "max_tokens", "api_key", "reasoning")
+    configurable_fields=("model", "max_tokens", "api_key")
 )
 
 
@@ -25,7 +25,6 @@ def _build_and_configure_model(
         "model": model_name,
         "max_tokens": max_tokens,
         "api_key": get_api_key_for_model(model_name, config),
-        "reasoning": "False",
     }
     return model_chain.with_retry(stop_after_attempt=max_retries).with_config(
         model_config
@@ -77,7 +76,7 @@ def create_llm_structured_model(
 def create_llm_chunk_model(
     config: RunnableConfig, class_name: Type[BaseModel] | None = None
 ) -> Runnable:
-    """Creates a small model for chunk biographical event detection."""
+    """Creates a small model for chunk drama event detection."""
     configurable = Configuration.from_runnable_config(config)
 
     # The chain is just the base model itself

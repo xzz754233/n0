@@ -1,7 +1,3 @@
-"""Defines the Pydantic models and TypedDicts for the Drama/Gossip Research agent.
-This file serves as the schema for data structures, agent tools, and state management.
-"""
-
 import operator
 from typing import Annotated, List, TypedDict
 
