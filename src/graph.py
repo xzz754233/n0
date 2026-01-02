@@ -1,29 +1,33 @@
+# src/graph.py
 import json
+import uuid
 from typing import Literal
 
 from langchain_core.messages import HumanMessage, SystemMessage, ToolMessage
 from langchain_core.runnables import RunnableConfig
-from langgraph.graph import START, StateGraph
+from langgraph.graph import START, StateGraph, END
 from langgraph.types import Command
 
 from src.configuration import Configuration
-from src.llm_service import create_llm_structured_model, create_llm_with_tools
+from src.llm_service import create_llm_with_tools, create_llm_structured_model
 from src.prompts import (
-    events_summarizer_prompt,
     lead_researcher_prompt,
-    structure_events_prompt,
+    structure_events_prompt,  # 這裡我們會稍微變通使用這個 prompt
 )
+
+# 引入新的子圖
 from src.research_events.research_events_graph import research_events_app
-from src.research_events.merge_events.utils import ensure_categories_with_events
 from src.state import (
-    CategoriesWithEvents,
     Chronology,
+    ChronologyEvent,
+    ChronologyDate,
     FinishResearchTool,
     ResearchEventsTool,
     SupervisorState,
     SupervisorStateInput,
+    RawEvent,
 )
-from src.utils import get_buffer_string_with_tools, get_langfuse_handler, think_tool
+from src.utils import get_langfuse_handler, think_tool
 
 config = Configuration()
 MAX_TOOL_CALL_ITERATIONS = config.max_tool_iterations
@@ -40,10 +44,18 @@ async def supervisor_node(
     messages = state.get("conversation_history", [])
     last_message = messages[-1] if messages else ""
 
+    # 簡單的事件計數摘要，讓 Agent 知道進度
+    current_events = state.get("structured_events", [])
+    events_summary_text = f"Currently have {len(current_events)} raw events collected."
+    if current_events:
+        # 提供最近收集到的幾個事件標題，讓 Agent 不要鬼打牆
+        titles = [e.name for e in current_events[-5:]]
+        events_summary_text += f" Recent findings: {', '.join(titles)}"
+
     system_message = SystemMessage(
         content=lead_researcher_prompt.format(
             person_to_research=state["person_to_research"],
-            events_summary=state.get("events_summary", "Everything is missing"),
+            events_summary=events_summary_text,
             last_message=last_message,
         )
     )
@@ -51,7 +63,7 @@ async def supervisor_node(
     human_message = HumanMessage(content="Start the research process.")
     prompt = [system_message, human_message]
 
-    # 這裡是最單純的調用，沒有 try-except 包裹，因為我們信任 LangChain 的錯誤處理
+    # 調用 LLM
     response = await tools_model.ainvoke(prompt)
 
     return Command(
@@ -68,18 +80,10 @@ async def supervisor_tools_node(
     config: RunnableConfig,
 ) -> Command[Literal["supervisor", "structure_events"]]:
     """The 'hands' of the agent."""
-
-    raw_events = state.get("existing_events")
-    existing_events = ensure_categories_with_events(raw_events)
-
-    events_summary = state.get("events_summary", "")
-    used_domains = state.get("used_domains", [])
     last_message = state["conversation_history"][-1]
     iteration_count = state.get("iteration_count", 0)
 
-    # --- 回歸簡單邏輯 ---
-    # 如果沒有 tool calls，或者次數到了，就結束。
-    # 不要再強制 retry 了，那會導致死循環。
+    # 強制結束條件
     if (
         not hasattr(last_message, "tool_calls")
         or not last_message.tool_calls
@@ -89,15 +93,15 @@ async def supervisor_tools_node(
 
     all_tool_messages = []
 
-    for tool_call in last_message.tool_calls:
-        # 簡單的型別檢查，防止崩潰即可
-        if not isinstance(tool_call, dict):
-            continue
+    # 用於累加這一輪新發現的事件
+    newly_found_chronology_events = []
 
+    for tool_call in last_message.tool_calls:
         tool_name = tool_call.get("name")
         tool_args = tool_call.get("args")
         tool_id = tool_call.get("id")
 
+        # JSON 解析保護
         if isinstance(tool_args, str):
             try:
                 tool_args = json.loads(tool_args)
@@ -117,46 +121,69 @@ async def supervisor_tools_node(
 
         elif tool_name == "ResearchEventsTool":
             research_question = tool_args.get("research_question", "")
+            print(f"🔍 Researching: {research_question}")
 
-            # 使用 try-except 防止子圖報錯導致主圖崩潰
             try:
+                # 調用子圖
                 result = await research_events_app.ainvoke(
                     {
                         "research_question": research_question,
-                        "existing_events": existing_events,
-                        "used_domains": used_domains,
+                        "target_urls": [],  # 初始化
+                        "processed_urls": [],  # 可以考慮從 global state 傳入以全域去重
+                        "gathered_events": [],  # 初始化
                     }
                 )
 
-                existing_events = ensure_categories_with_events(
-                    result["existing_events"]
-                )
-                used_domains = result["used_domains"]
+                raw_events = result.get("gathered_events", [])
 
-                summarizer_prompt = events_summarizer_prompt.format(
-                    existing_events=existing_events
-                )
-                response = await create_llm_structured_model(config=config).ainvoke(
-                    summarizer_prompt
-                )
-                events_summary = response.content
+                # [Data Transformation] RawEvent -> ChronologyEvent
+                # 將 RawEvent 轉為 ChronologyEvent 以便存入 Main State
+                # 這一步是為了適配 SupervisorState 的型別定義
+                for raw in raw_events:
+                    # 嘗試從 date_context 提取年份，失敗則 None
+                    year = None
+                    import re
 
-                content_msg = f"Research complete for: {research_question}"
+                    match = re.search(r"\d{4}", raw.date_context or "")
+                    if match:
+                        year = int(match.group(0))
+
+                    newly_found_chronology_events.append(
+                        ChronologyEvent(
+                            id=str(uuid.uuid4())[:8],
+                            name=f"Event from {raw.source_url[:30]}...",  # 暫時名稱
+                            description=raw.description,
+                            date=ChronologyDate(year=year, note=raw.date_context),
+                            location="Internet",
+                            source_url=raw.source_url,
+                        )
+                    )
+
+                content_msg = (
+                    f"Found {len(raw_events)} events related to {research_question}."
+                )
+
             except Exception as e:
                 print(f"❌ Error in ResearchEventsTool: {e}")
-                content_msg = "Error executing research."
+                content_msg = f"Error executing research: {str(e)}"
 
             all_tool_messages.append(
                 ToolMessage(content=content_msg, tool_call_id=tool_id, name=tool_name)
             )
 
+    # 更新 State：將新發現的事件加入 structured_events (利用 list concat)
+    existing = state.get("structured_events", [])
+    # 簡單過濾 None
+    if existing is None:
+        existing = []
+
+    updated_events = existing + newly_found_chronology_events
+
     return Command(
         goto="supervisor",
         update={
-            "existing_events": existing_events,
             "conversation_history": all_tool_messages,
-            "used_domains": used_domains,
-            "events_summary": events_summary,
+            "structured_events": updated_events,  # 這裡進行了 State 更新
         },
     )
 
@@ -164,69 +191,60 @@ async def supervisor_tools_node(
 async def structure_events(
     state: SupervisorState, config: RunnableConfig
 ) -> Command[Literal["__end__"]]:
-    """Step 2: Structures events."""
-    print("--- Step 2: Structuring Events into JSON ---")
+    """
+    Step 3: Final Consolidation (The Reduce Step).
+    Takes all raw/loose events and merges them into a clean timeline.
+    """
+    print("--- Final Step: Consolidating & Deduplicating Events ---")
 
-    raw_events = state.get("existing_events")
-    existing_events = ensure_categories_with_events(raw_events)
+    all_events = state.get("structured_events", [])
+    if not all_events:
+        return {"structured_events": []}
+
+    # 1. 準備輸入資料：將大量事件轉為文字，供 LLM 整理
+    # 如果事件非常多，可以考慮先按年份簡單排序，或分批處理
+    # 這裡示範一次性處理 (Gemini Flash Context Window 很大)
+    events_text_blob = ""
+    for idx, e in enumerate(all_events):
+        events_text_blob += f"Event {idx + 1}: [{e.date.note or e.date.year}] {e.description} (Source: {e.source_url})\n"
+
+    # 2. 定義整理用的 Prompt
+    consolidation_prompt = f"""
+    You are a Timeline Editor. I have collected {len(all_events)} raw events.
+    Many are duplicates or fragmented.
+    
+    Task:
+    1. **Deduplicate**: Merge events that describe the same incident.
+    2. **Chronological Order**: Sort strictly by date.
+    3. **Fix Text**: Ensure descriptions are complete sentences.
+    4. **Source**: Keep the most authoritative source URL.
+    
+    Input Events:
+    {events_text_blob[:50000]}  # 簡單截斷防止溢出，雖然 Flash 可以吃 1M
+    
+    Return a clean JSON list of events.
+    """
+
+    # 3. 調用 LLM 生成最終 JSON
     structured_llm = create_llm_structured_model(config=config, class_name=Chronology)
 
-    all_events = []
+    try:
+        final_result = await structured_llm.ainvoke(consolidation_prompt)
+        final_events = final_result.events
 
-    # 這裡保持之前的優化，因為這是讓輸出變漂亮的關鍵，不會影響穩定性
-    tasks = [
-        (
-            structure_events_prompt.format(existing_events=existing_events.context),
-            "context",
-        ),
-        (
-            structure_events_prompt.format(existing_events=existing_events.conflict),
-            "conflict",
-        ),
-        (
-            structure_events_prompt.format(existing_events=existing_events.reaction),
-            "reaction",
-        ),
-        (
-            structure_events_prompt.format(existing_events=existing_events.outcome),
-            "outcome",
-        ),
-    ]
+        # 簡單後處理
+        for e in final_events:
+            if not e.id:
+                e.id = str(uuid.uuid4())[:8]
 
-    for prompt, category in tasks:
-        text_content = getattr(existing_events, category, "")
-        if not text_content or len(text_content) < 5:
-            continue
-        try:
-            resp = await structured_llm.ainvoke(prompt)
-            all_events.extend(resp.events)
-        except Exception as e:
-            print(f"Error structuring {category}: {e}")
+        print(f"✅ Final timeline generated with {len(final_events)} events.")
 
-    # 保留清理邏輯，這修復了斷句問題
-    cleaned_events = []
-    for event in all_events:
-        if event.description:
-            event.description = event.description.strip().strip("\\").strip('"').strip()
-            if event.description and not event.description.endswith(
-                (".", "!", "?", '"')
-            ):
-                event.description += "."
+    except Exception as e:
+        print(f"❌ Error in final consolidation: {e}")
+        # 如果失敗，回傳原始列表（至少有東西）
+        final_events = all_events
 
-        if event.name:
-            event.name = event.name.strip().strip("\\").strip('"').strip()
-
-        if not event.location or event.location.lower() in [
-            "none",
-            "unknown",
-            "null",
-            "",
-        ]:
-            event.location = "Internet / General"
-
-        cleaned_events.append(event)
-
-    return {"structured_events": cleaned_events}
+    return {"structured_events": final_events}
 
 
 workflow = StateGraph(SupervisorState, input_schema=SupervisorStateInput)

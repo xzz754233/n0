@@ -1,201 +1,111 @@
-from typing import Literal, TypedDict
+# src/research_events/research_events_graph.py
+import asyncio
+from typing import Literal
 
 from langchain_tavily import TavilySearch
 from langgraph.graph import END, START, StateGraph
-from langgraph.graph.state import RunnableConfig
 from langgraph.types import Command
-from pydantic import BaseModel, Field
+from langchain_core.runnables import RunnableConfig
+
 from src.configuration import Configuration
-from src.llm_service import create_llm_structured_model
-from src.research_events.merge_events.merge_events_graph import merge_events_app
-from src.services.url_service import URLService
-from src.state import CategoriesWithEvents
-from src.url_crawler.url_krawler_graph import url_crawler_app
+from src.services.event_service import EventService
+from src.state import ResearchState
+from src.url_crawler.utils import url_crawl, chunk_text_by_tokens
 from src.utils import get_langfuse_handler
-
-# IMPORT FIX: Ensure we use the helper
-from src.research_events.merge_events.utils import ensure_categories_with_events
+from src.services.url_service import URLService
 
 
-class InputResearchEventsState(TypedDict):
-    research_question: str
-    existing_events: CategoriesWithEvents
-    used_domains: list[str]
+# 1. 搜尋節點
+def search_node(state: ResearchState) -> Command[Literal["process_batch"]]:
+    """Find relevant URLs using Tavily."""
+    question = state.get("research_question")
+    existing_urls = state.get("processed_urls", [])
 
-
-class ResearchEventsState(InputResearchEventsState):
-    urls: list[str]
-    extracted_events: str
-
-
-class OutputResearchEventsState(TypedDict):
-    existing_events: CategoriesWithEvents
-    used_domains: list[str]
-
-
-class BestUrls(BaseModel):
-    selected_urls: list[str] = Field(
-        description="A list containing ONLY the single best URL."
+    # 使用 Tavily 搜尋
+    tavily = TavilySearch(
+        max_results=3, include_answer=False, include_raw_content=False
     )
+    search_results = tavily.invoke({"query": question})
+
+    found_urls = [r["url"] for r in search_results.get("results", [])]
+
+    # 簡單過濾掉已經爬過的
+    new_urls = [url for url in found_urls if url not in existing_urls]
+
+    print(f"🔍 Found {len(new_urls)} new URLs for: {question}")
+
+    return Command(goto="process_batch", update={"target_urls": new_urls})
 
 
-def url_finder(
-    state: ResearchEventsState,
-    config: RunnableConfig,
-) -> Command[Literal["should_process_url_router"]]:
-    """Find the urls for the research_question"""
-    research_question = state.get("research_question", "")
-    used_domains = state.get("used_domains", [])
-
-    if not research_question:
-        raise ValueError("research_question is required")
-
-    tool = TavilySearch(
-        max_results=3,
-        topic="general",
-        include_raw_content=False,
-        include_answer=False,
-        exclude_domains=used_domains,
-    )
-
-    result = tool.invoke({"query": research_question})
-    urls = [result["url"] for result in result["results"]]
-
-    prompt = """
-        From the results below, select the ONE SINGLE best URL that provides a comprehensive timeline 
-        of the drama/scandal. Prefer Wikipedia, BBC, or major news recaps.
-
-        <Results>
-        {results}
-        </Results>
-
-        <Research Question>
-        {research_question}
-        </Research Question>
+# 2. 批次處理節點 (核心優化)
+async def process_batch_node(
+    state: ResearchState, config: RunnableConfig
+) -> Command[Literal["__end__"]]:
     """
+    Crawl and Extract events from ALL target URLs in parallel.
+    This replaces the old loop-based merge logic.
+    """
+    urls = state.get("target_urls", [])
+    question = state.get("research_question", "")
 
-    prompt = prompt.format(results=urls, research_question=research_question)
-    structured_llm = create_llm_structured_model(config=config, class_name=BestUrls)
-    structured_result = structured_llm.invoke(prompt)
-
-    return Command(
-        goto="should_process_url_router",
-        update={"urls": structured_result.selected_urls},
-    )
-
-
-def updateUrlList(
-    state: ResearchEventsState,
-) -> tuple[list[str], list[str]]:
-    urls = state.get("urls", [])
-    used_domains = state.get("used_domains", [])
-    return URLService.update_url_list(urls, used_domains)
-
-
-def should_process_url_router(
-    state: ResearchEventsState,
-) -> Command[Literal["crawl_url", "__end__"]]:
-    urls = state.get("urls", [])
-    used_domains = state.get("used_domains", [])
-
-    if urls and len(urls) > 0:
-        domain = URLService.extract_domain(urls[0])
-        if domain in used_domains:
-            remaining_urls = urls[1:]
-            return Command(
-                goto="should_process_url_router",
-                update={"urls": remaining_urls, "used_domains": used_domains},
-            )
-
-        print(f"URLs remaining: {len(state['urls'])}. Routing to crawl.")
-        return Command(goto="crawl_url")
-    else:
-        print("No URLs remaining. Routing to __end__.")
+    if not urls:
         return Command(goto=END)
 
+    print(f"🚀 Batch processing {len(urls)} URLs...")
 
-async def crawl_url(
-    state: ResearchEventsState,
-) -> Command[Literal["merge_events_and_update"]]:
-    """Crawls the next URL."""
-    urls = state["urls"]
-    url_to_process = urls[0]
-    research_question = state.get("research_question", "")
+    # 定義單個 URL 的處理邏輯
+    async def process_single_url(url):
+        try:
+            # A. 爬取
+            content = await url_crawl(url)
+            if not content:
+                return []
 
-    if not research_question:
-        raise ValueError("research_question is required for url crawling")
-
-    result = await url_crawler_app.ainvoke(
-        {"url": url_to_process, "research_question": research_question}
-    )
-    extracted_events = result["extracted_events"]
-
-    return Command(
-        goto="merge_events_and_update",
-        update={"extracted_events": extracted_events},
-    )
-
-
-async def merge_events_and_update(
-    state: ResearchEventsState,
-) -> Command[Literal["should_process_url_router"]]:
-    """Merges new events."""
-    # Normalize state
-    existing_events_raw = state.get("existing_events")
-    existing_events = ensure_categories_with_events(existing_events_raw)
-
-    extracted_events = state.get("extracted_events", "")
-    research_question = state.get("research_question", "")
-
-    try:
-        # Invoke the merge subgraph
-        result = await merge_events_app.ainvoke(
-            {
-                "existing_events": existing_events,
-                "extracted_events": extracted_events,
-                "research_question": research_question,
-            }
-        )
-
-        # DEFENSIVE CODING: Check output type
-        if isinstance(result, dict) and "existing_events" in result:
-            new_existing_events = result["existing_events"]
-        else:
-            print(
-                f"⚠️ Merge subgraph returned unexpected format: {type(result)}. Retaining old events."
+            # B. 分塊
+            chunks = await chunk_text_by_tokens(
+                content, chunk_size=3000, overlap_size=100
             )
-            new_existing_events = existing_events
 
-    except Exception as e:
-        print(f"❌ Error in merge_events_app: {e}. Retaining old events.")
-        new_existing_events = existing_events
+            # C. 提取 (這一步會調用 EventService 做並發提取)
+            # 限制每個網頁最多看前 3-4 個 chunks，避免 token 浪費在 footer/側邊欄
+            limit_chunks = chunks[:4]
+            events = await EventService.run_batch_extraction(
+                limit_chunks, url, question, config
+            )
+            return events
+        except Exception as e:
+            print(f"❌ Error processing {url}: {e}")
+            return []
 
-    remaining_urls, used_domains = updateUrlList(state)
+    # 並發執行所有 URL 的處理
+    results = await asyncio.gather(*[process_single_url(url) for url in urls])
 
+    # 展平結果
+    all_new_events = [e for batch in results for e in batch]
+
+    print(f"📦 Batch complete. Total raw events extracted: {len(all_new_events)}")
+
+    # 這裡利用 State 的 operator.add 自動將 all_new_events 加入 gathered_events
     return Command(
-        goto="should_process_url_router",
+        goto=END,
         update={
-            "existing_events": new_existing_events,
-            "urls": remaining_urls,
-            "used_domains": used_domains,
+            "gathered_events": all_new_events,
+            "processed_urls": urls,  # 記錄已處理
+            "target_urls": [],  # 清空待處理隊列
         },
     )
 
 
-research_events_builder = StateGraph(
-    ResearchEventsState,
-    input_schema=InputResearchEventsState,
-    output_schema=OutputResearchEventsState,
-    config_schema=Configuration,
-)
+# --- Graph Definition ---
+workflow = StateGraph(ResearchState)
+workflow.add_node("search_node", search_node)
+workflow.add_node("process_batch", process_batch_node)
 
-research_events_builder.add_node("url_finder", url_finder)
-research_events_builder.add_node("should_process_url_router", should_process_url_router)
-research_events_builder.add_node("crawl_url", crawl_url)
-research_events_builder.add_node("merge_events_and_update", merge_events_and_update)
+workflow.add_edge(START, "search_node")
+# search_node 直接指派了 goto="process_batch"，這裡不需要 edge，但為了視覺化可以加
+# workflow.add_edge("search_node", "process_batch")
+workflow.add_edge("process_batch", END)
 
-research_events_builder.add_edge(START, "url_finder")
-
-research_events_app = research_events_builder.compile().with_config(
+research_events_app = workflow.compile().with_config(
     {"callbacks": [get_langfuse_handler()]}
 )
