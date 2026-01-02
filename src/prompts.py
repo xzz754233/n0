@@ -64,9 +64,6 @@ structure_events_prompt = """You are a Pop Culture Archivist and Chief Editor. Y
 CRITICAL: Return ONLY the structured JSON.
 """
 
-# --- [NEW] High-Speed Extraction Prompt ---
-# 這是為了 STEP 2 新增的核心 Prompt
-# 專注於從 Chunk 中提取原子化事件，不進行合併
 EVENT_EXTRACTION_PROMPT = """
 You are a highly precise Data Extractor. Your task is to extract relevant events from the provided text chunk regarding: "{topic}".
 
@@ -79,7 +76,7 @@ You are a highly precise Data Extractor. Your task is to extract relevant events
    - `reaction`: Public outrage, apologies, police involvement.
    - `outcome`: Cancellations, refunds, long-term effects.
 4. **Accuracy**: Do not hallucinate. Only extract what is in the text.
-5. **JSON Safety**: Ensure all strings are properly escaped.
+5. **Formatting**: Output natural text. Do NOT manually escape apostrophes (e.g., write "Willy's", NOT "Willy\\'s").
 
 <Text Chunk>
 {text_chunk}
