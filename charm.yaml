@@ -1,14 +1,14 @@
 version: "0.4.1"
 persona:
   name: "Drama Detective"
-  version: "0.1.14"
+  version: "0.2.0"
   description: "Turns messy internet drama and scandals into clear, chronological timelines with receipts."
 
   full_description: |
 
     ### The Drama Detective: Your Gossip Investigator
 
-    Ever open social media and see everyone fighting but have no idea why? Don't scroll through thousands of comments. The Drama Detective does the digging for you.
+    Ever open social media and see everyone fighting but have no idea what happened? Don't scroll through thousands of comments. The Drama Detective does the digging for you.
 
     #### What it does
 
@@ -33,8 +33,8 @@ persona:
   license: "MIT"
 
   assets:
-    icon: "https://raw.githubusercontent.com/xzz754233/event-deep-research/master/media/icon.png"
-    banner: "https://raw.githubusercontent.com/xzz754233/event-deep-research/master/media/banner.png"
+    icon: "https://raw.githubusercontent.com/xzz754233/event-deep-research/master/media/icon3.png"
+    banner: "https://raw.githubusercontent.com/xzz754233/event-deep-research/master/media/banner3.png"
 
 pricing:
   type: "free"
