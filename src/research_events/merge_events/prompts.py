@@ -1,72 +1,69 @@
 categorize_events_prompt = """
-You are a helpful assistant that will categorize the events into the 4 categories.
+You are a "Fact Checker". Categorize the findings to build a verdict dossier.
 
-<Events>
+<Findings>
 {events}
-</Events>
+</Findings>
 
-<Categories>
-context: Background info, previous relationships, or the 'calm before the storm'. origin of the beef.
-conflict: The main incident, the accusation, the leak, the breakup, or the scandal itself.
-reaction: Public responses, PR statements, tweets from other influencers, lawsuits, or 'receipts' posted.
-outcome: Current status, who was cancelled, impact on career, or final resolution (if any).
-</Categories>
-
+<Categories Definition>
+origin_of_belief: Where did this idea come from? (Old wives' tale, misinterpreted study, viral TikTok?).
+scientific_evidence: Hard Data. Studies, statistics, p-values, meta-analyses. DOES NOT include anecdotes.
+expert_consensus: What does the 'Establishment' say? (WHO, NASA, Major Associations).
+final_verdict: The conclusion. Is it BUSTED, PLAUSIBLE, or CONFIRMED?
+</Categories Definition>
 
 <Rules>
-INCLUDE ALL THE INFORMATION FROM THE EVENTS, do not abbreviate or omit any information.
+- KEEP THE SOURCE URL if mentioned.
+- DO NOT summarize away the numbers. We need the specific stats.
 </Rules>
 """
 
 EXTRACT_AND_CATEGORIZE_PROMPT = """
-You are a Drama/Scandal Event Extractor and Categorizer. Your task is to analyze text chunks for events related to the topic/person.**
+You are a "MythBuster" Analyst. Your job is to verify the claim: **"{research_question}"**.
 
 <Available Tools>
-- `IrrelevantChunk` (use if the text contains NO drama/scandal events relevant to the research question)
-- `RelevantEventsCategorized` (use if the text contains relevant events - categorize them into the 4 categories)
+- `IrrelevantChunk`: Marketing, opinion pieces without data, random chatter.
+- `RelevantEventsCategorized`: Evidence, studies, expert quotes, statistical data.
 </Available Tools>
 
-<Categories>
-context: Background info, previous relationships, or the 'calm before the storm'. origin of the beef.
-conflict: The main incident, the accusation, the leak, the breakup, or the scandal itself.
-reaction: Public responses, PR statements, tweets from other influencers, lawsuits, or 'receipts' posted.
-outcome: Current status, who was cancelled, impact on career, or final resolution (if any).
-</Categories>
+<Dynamic Adaptation Guide>
+- **If Health/Science:** Look for "Meta-analysis", "RCT", "Sample size", "Correlation vs Causation".
+- **If Sports/Performance:** Look for "Player statistics", "Age curves", "Performance data analysis".
+- **If History/Culture:** Look for "Historical records", "Primary sources".
 
-**EXTRACTION RULES**:
-- Extract COMPLETE sentences with ALL available details (dates, names, platforms, context, emotions)
-- Include "receipts" (screenshots, quotes, specific evidence)
-- Preserve the tone of the drama (e.g., if it was a heated argument, describe it as such)
-- Include only events directly relevant to the research question
-- Maintain chronological order within each category
-- Format as clean bullet points with complete, detailed descriptions
-- IMPORTANT: Return each category as a SINGLE string containing all bullet points, not as a list
+<Categories Definition>
+1. **origin_of_belief**: Why do people think this is true?
+2. **scientific_evidence**: The raw data. (e.g., "A study of 2000 gamers found reaction time slows by 10ms").
+3. **expert_consensus**: The general agreement. (e.g., "Most coaches agree but emphasize experience over reflexes").
+4. **final_verdict**: The bottom line.
+
+<Extraction Rules>
+- **SKEPTICISM IS KEY**: "My grandma said" is NOT evidence.
+- **DISTINGUISH**: Separate "Correlation" from "Causation".
+- **QUANTIFY**: If there are numbers (ages, percentages), extract them accurately.
+- **FORMAT**: Write complete sentences.
 
 <Text to Analyze>
 {text_chunk}
 </Text to Analyze>
 
-You must call exactly one of the provided tools. Do not respond with plain text.
+You must call exactly one of the provided tools.
 """
 
-
-MERGE_EVENTS_TEMPLATE = """You are an expert Editor. Merge the 'New Events' into the 'Original Events' list.
+MERGE_EVENTS_TEMPLATE = """You are the Chief Judge. Merge the evidence into a clear Verdict Report.
 
 <Critical Rules>
-1. **DEDUPLICATE**: If an event in 'New Events' is already covered in 'Original Events' (even with slightly different wording), DO NOT add it again. Just merge any new specific details (like a specific time or quote) into the existing bullet point.
-2. **FIX BROKEN TEXT**: If a sentence ends abruptly or has escaping characters like "OpenAI\\", fix it or remove the garbage characters.
-3. **CHRONOLOGY**: Maintain strict time order.
-4. **FORMAT**: Output ONLY clean bullet points.
+1. **WEIGH THE EVIDENCE**: A meta-analysis > A single study > An expert opinion > A random blog.
+2. **HIGHLIGHT CONTRADICTIONS**: If Study A says YES and Study B says NO, explicitly state "Evidence is mixed".
+3. **CLARITY**: Use scientific terms correctly but explain them simply.
+4. **TONE**: Authoritative, objective, rational.
 </Critical Rules>
 
-<Events>
-Original events:
+<Report Data>
+Master Report:
 {original}
 
-New events:
+New Findings:
 {new}
-</Events>
-
-<Output>
-Return only the merged, de-duplicated list of events as bullet points.
-</Output>"""
+</Report Data>
+"""

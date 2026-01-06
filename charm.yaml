@@ -1,40 +1,39 @@
 version: "0.4.1"
 persona:
   name: "Drama Detective"
-  version: "0.2.1"
+  version: "0.2.4"
   description: "Turns messy internet drama and incidents into clear, chronological timelines with receipts."
 
   full_description: |
 
-    ### The Drama Detective: Your Gossip Investigator
+    ### The MythBuster: Your Fact-Checking Engine
 
-    Ever open social media and see everyone fighting but have no idea what happened? Don't scroll through thousands of comments. The Drama Detective does the digging for you.
+    "Don't eat after 8 PM." 
+    "Esports players are old at 25." 
+    "MSG causes headaches."
 
-    #### What it does
+    Are these facts, or just things people say? The MythBuster doesn't guess. It scrapes academic journals, statistical databases, and expert analysis to issue a final verdict.
 
-    This agent acts as an elite entertainment journalist. It searches the web and social media, filters out the noise, and reconstructs exactly what happened, including the background, context, and latest developments.
-
-    #### How to use it
-
-    Simply enter a celebrity name, an influencer pair, or a specific event. 
-
-    **Examples:** "Taylor Swift vs Kanye West", "The FTX Collapse", "OpenAI Board Drama".
+    #### How it works
+    You enter a belief or claim. The agent:
+    1.  **Traces the Origin:** Where did this idea start?
+    2.  **Hunts for Data:** Ignores blogs; looks for studies, sample sizes, and P-values.
+    3.  **Weighs the Consensus:** Checks what the scientific community actually agrees on.
+    4.  **Issues a Verdict:** BUSTED, CONFIRMED, or PLAUSIBLE.
 
     #### What you get
+    A structured **Verdict Dossier** with:
+    * **Evidence Points:** Key findings with **direct citations** to sources.
+    * **Stance:** Clear labels on whether the data supports or debunks the claim.
+    * **Final Verdict:** An authoritative conclusion.
 
-    A structured, chronological timeline broken down into 4 parts:
-    1.  **The Context:** How it all started.
-    2.  **The Conflict:** The explosion, accusations, and leaked details.
-    3.  **The Reaction:** Who took sides, PR statements, and public fallout.
-    4.  **The Outcome:** Where are they now? Who got cancelled?
-
-  authors: ["Charm"]
-  tags: ["entertainment", "social media", "investigation", "news", "timeline"]
+  authors: ["San0"]
+  tags: ["entertainment", "Learning", "Fact Checking", "myth-busting"]
   license: "MIT"
 
   assets:
-    icon: "https://raw.githubusercontent.com/xzz754233/event-deep-research/master/media/icon3.png"
-    banner: "https://raw.githubusercontent.com/xzz754233/event-deep-research/master/media/banner3.png"
+    icon: ""
+    banner: ""
 
 pricing:
   type: "free"
@@ -46,13 +45,13 @@ interface:
     properties:
       person_to_research:
         type: "string"
-        title: "Drama Topic / Person"
-        description: "Who or what is the scandal about? (e.g., 'Taylor Swift', 'FTX Collapse')"
-        default: "Taylor Swift vs Kanye West"
+        title: "Myth or Claim"
+        description: "The statement you want to verify. (e.g., 'Skipping breakfast is bad for you')"
+        default: "Skipping breakfast is bad for your health."
 
   output:
     type: "object"
-    description: "A JSON object containing the structured chronological events of the drama."
+    description: "A JSON object containing the evidence dossier and final verdict."
 
 runtime:
   adapter:
